@@ -137,7 +137,7 @@ test_verify_one_file! {
             f1(j, i)
         }
 
-        fn test_spec_fn(a: int, b: int) {
+        proof fn test_spec_fn(a: int, b: int) {
             hide(f2);
 
             assume(f2(a, b));

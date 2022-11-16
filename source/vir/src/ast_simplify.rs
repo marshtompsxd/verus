@@ -727,6 +727,7 @@ fn simplify_function(
             name: Arc::new(crate::def::DUMMY_PARAM.to_string()),
             typ: Arc::new(TypX::Int(IntRange::Int)),
             mode: Mode::Spec,
+            typ_mode: Mode::Spec,
             is_mut: false,
             unwrapped_info: None,
         };

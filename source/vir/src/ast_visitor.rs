@@ -864,8 +864,9 @@ where
         name: param.x.name.clone(),
         typ,
         mode: param.x.mode,
+        typ_mode: param.x.typ_mode,
         is_mut: param.x.is_mut,
-        unwrapped_info: param.x.unwrapped_info.clone(),
+        unwrapped_info: None,
     };
     Ok(Spanned::new(param.span.clone(), paramx))
 }

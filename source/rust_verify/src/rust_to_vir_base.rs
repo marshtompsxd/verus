@@ -350,6 +350,19 @@ pub(crate) fn mid_ty_simplify<'tcx>(
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub enum ErasedTyp {
+    No,
+    Ghost,
+    Tracked,
+}
+
+impl ErasedTyp {
+    pub fn is_erased(&self) -> bool {
+        *self != ErasedTyp::No
+    }
+}
+
 // TODO review and cosolidate type translation, e.g. with `ty_to_vir`, if possible
 
 // returns VIR Typ and whether Ghost/Tracked was erased from around the outside of the VIR Typ
@@ -359,10 +372,10 @@ pub(crate) fn mid_ty_to_vir_ghost<'tcx>(
     ty: &rustc_middle::ty::Ty<'tcx>,
     as_datatype: bool,
     allow_mut_ref: bool,
-) -> Result<(Typ, bool), VirErr> {
+) -> Result<(Typ, ErasedTyp), VirErr> {
     let t = match ty.kind() {
-        TyKind::Bool => (Arc::new(TypX::Bool), false),
-        TyKind::Uint(_) | TyKind::Int(_) => (Arc::new(TypX::Int(mk_range(ty))), false),
+        TyKind::Bool => (Arc::new(TypX::Bool), ErasedTyp::No),
+        TyKind::Uint(_) | TyKind::Int(_) => (Arc::new(TypX::Int(mk_range(ty))), ErasedTyp::No),
         TyKind::Ref(_, tys, rustc_ast::Mutability::Not) => {
             mid_ty_to_vir_ghost(tcx, span, tys, as_datatype, allow_mut_ref)?
         }
@@ -370,26 +383,26 @@ pub(crate) fn mid_ty_to_vir_ghost<'tcx>(
             mid_ty_to_vir_ghost(tcx, span, tys, as_datatype, allow_mut_ref)?
         }
         TyKind::Param(param) if param.name == kw::SelfUpper => {
-            (Arc::new(TypX::TypParam(vir::def::trait_self_type_param())), false)
+            (Arc::new(TypX::TypParam(vir::def::trait_self_type_param())), ErasedTyp::No)
         }
         TyKind::Param(param) => {
-            (Arc::new(TypX::TypParam(Arc::new(param_ty_to_vir_name(param)))), false)
+            (Arc::new(TypX::TypParam(Arc::new(param_ty_to_vir_name(param)))), ErasedTyp::No)
         }
         TyKind::Never => {
             // All types are inhabited in SMT; we pick an arbitrary inhabited type for Never
-            (Arc::new(TypX::Tuple(Arc::new(vec![]))), false)
+            (Arc::new(TypX::Tuple(Arc::new(vec![]))), ErasedTyp::No)
         }
         TyKind::Tuple(_) => {
             let mut typs: Vec<Typ> = Vec::new();
             for t in ty.tuple_fields().iter() {
                 typs.push(mid_ty_to_vir_ghost(tcx, span, &t, as_datatype, allow_mut_ref)?.0);
             }
-            (Arc::new(TypX::Tuple(Arc::new(typs))), false)
+            (Arc::new(TypX::Tuple(Arc::new(typs))), ErasedTyp::No)
         }
         TyKind::Slice(ty) => {
             let typ = mid_ty_to_vir_ghost(tcx, span, ty, as_datatype, allow_mut_ref)?.0;
             let typs = Arc::new(vec![typ]);
-            (Arc::new(TypX::Datatype(vir::def::slice_type(), typs)), false)
+            (Arc::new(TypX::Datatype(vir::def::slice_type(), typs)), ErasedTyp::No)
         }
         TyKind::Adt(AdtDef(adt_def_data), args) => {
             let did = adt_def_data.did;
@@ -397,15 +410,15 @@ pub(crate) fn mid_ty_to_vir_ghost<'tcx>(
             let is_strslice =
                 tcx.is_diagnostic_item(Symbol::intern("pervasive::string::StrSlice"), did);
             if is_strslice && !as_datatype {
-                return Ok((Arc::new(TypX::StrSlice), false));
+                return Ok((Arc::new(TypX::StrSlice), ErasedTyp::No));
             }
             // TODO use lang items instead of string comparisons
             if s == crate::def::BUILTIN_INT {
-                (Arc::new(TypX::Int(IntRange::Int)), false)
+                (Arc::new(TypX::Int(IntRange::Int)), ErasedTyp::No)
             } else if s == crate::def::BUILTIN_NAT {
-                (Arc::new(TypX::Int(IntRange::Nat)), false)
+                (Arc::new(TypX::Int(IntRange::Nat)), ErasedTyp::No)
             } else {
-                let mut typ_args: Vec<(Typ, bool)> = Vec::new();
+                let mut typ_args: Vec<(Typ, ErasedTyp)> = Vec::new();
                 for arg in args.iter() {
                     match arg.unpack() {
                         rustc_middle::ty::subst::GenericArgKind::Type(t) => {
@@ -419,7 +432,10 @@ pub(crate) fn mid_ty_to_vir_ghost<'tcx>(
                         }
                         rustc_middle::ty::subst::GenericArgKind::Lifetime(_) => {}
                         rustc_middle::ty::subst::GenericArgKind::Const(cnst) => {
-                            typ_args.push((mid_ty_const_to_vir(tcx, Some(span), &cnst)?, false));
+                            typ_args.push((
+                                mid_ty_const_to_vir(tcx, Some(span), &cnst)?,
+                                ErasedTyp::No,
+                            ));
                         }
                     }
                 }
@@ -432,10 +448,11 @@ pub(crate) fn mid_ty_to_vir_ghost<'tcx>(
                 {
                     return Ok(typ_args[0].clone());
                 }
-                if (def_name == "builtin::Ghost" || def_name == "builtin::Tracked")
-                    && typ_args.len() == 1
-                {
-                    return Ok((typ_args[0].0.clone(), true));
+                if def_name == "builtin::Ghost" && typ_args.len() == 1 {
+                    return Ok((typ_args[0].0.clone(), ErasedTyp::Ghost));
+                }
+                if def_name == "builtin::Tracked" && typ_args.len() == 1 {
+                    return Ok((typ_args[0].0.clone(), ErasedTyp::Tracked));
                 }
                 if def_name == "builtin::FnSpec" {
                     assert!(typ_args.len() == 2);
@@ -448,10 +465,10 @@ pub(crate) fn mid_ty_to_vir_ghost<'tcx>(
                             panic!("expected first type argument of FnSpec to be a tuple");
                         }
                     };
-                    return Ok((Arc::new(TypX::Lambda(param_typs, ret_typ)), false));
+                    return Ok((Arc::new(TypX::Lambda(param_typs, ret_typ)), ErasedTyp::No));
                 }
                 let typ_args = typ_args.into_iter().map(|(t, _)| t).collect();
-                (Arc::new(def_id_to_datatype(tcx, did, Arc::new(typ_args))), false)
+                (Arc::new(def_id_to_datatype(tcx, did, Arc::new(typ_args))), ErasedTyp::No)
             }
         }
         TyKind::Closure(def, substs) => {
@@ -475,9 +492,9 @@ pub(crate) fn mid_ty_to_vir_ghost<'tcx>(
             )?
             .0;
             let id = def.as_local().unwrap().local_def_index.index();
-            (Arc::new(TypX::AnonymousClosure(args, ret, id)), false)
+            (Arc::new(TypX::AnonymousClosure(args, ret, id)), ErasedTyp::No)
         }
-        TyKind::Char => (Arc::new(TypX::Char), false),
+        TyKind::Char => (Arc::new(TypX::Char), ErasedTyp::No),
         TyKind::Float(..) => unsupported_err!(span, "floating point types"),
         TyKind::Foreign(..) => unsupported_err!(span, "foreign types"),
         TyKind::Str => unsupported_err!(span, "str type"),

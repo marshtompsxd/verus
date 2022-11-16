@@ -12,7 +12,8 @@ use crate::def::{get_variant_fn_name, is_variant_fn_name};
 use crate::rust_to_vir_adts::{check_item_enum, check_item_struct};
 use crate::rust_to_vir_base::{
     check_generic_bound, check_generics_bounds, def_id_to_vir_path, fn_item_hir_id_to_self_def_id,
-    hack_get_def_name, mid_ty_to_vir, mk_visibility, typ_path_and_ident_to_vir_path,
+    hack_get_def_name, mid_ty_to_vir, mid_ty_to_vir_ghost, mk_visibility,
+    typ_path_and_ident_to_vir_path,
 };
 use crate::rust_to_vir_func::{check_foreign_item_fn, check_item_fn, CheckItemFnEither};
 use crate::util::{err_span, unsupported_err_span};
@@ -374,7 +375,8 @@ fn check_item<'tcx>(
             }
 
             let mid_ty = ctxt.tcx.type_of(def_id);
-            let vir_ty = mid_ty_to_vir(ctxt.tcx, item.span, &mid_ty, false)?;
+            let (vir_ty, erased_typ) =
+                mid_ty_to_vir_ghost(ctxt.tcx, item.span, &mid_ty, false, false)?;
 
             crate::rust_to_vir_func::check_item_const(
                 ctxt,
@@ -384,6 +386,7 @@ fn check_item<'tcx>(
                 visibility(),
                 ctxt.tcx.hir().attrs(item.hir_id()),
                 &vir_ty,
+                erased_typ,
                 body_id,
             )?;
         }

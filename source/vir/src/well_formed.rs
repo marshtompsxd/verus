@@ -18,6 +18,32 @@ struct Ctxt {
     pub(crate) dts: HashMap<Path, Datatype>,
 }
 
+fn typ_min_mode(ctxt: &Ctxt, typ: &crate::ast::Typ) -> Mode {
+    use crate::ast::IntRange;
+    match &**typ {
+        TypX::Bool => Mode::Exec,
+        TypX::Int(IntRange::Int | IntRange::Nat) => Mode::Proof,
+        TypX::Int(IntRange::U(_) | IntRange::I(_) | IntRange::USize | IntRange::ISize) => {
+            Mode::Exec
+        }
+        TypX::ConstInt(_) => Mode::Exec,
+        TypX::Tuple(ts) => ts
+            .iter()
+            .map(|t| typ_min_mode(ctxt, t))
+            .reduce(crate::modes::mode_join)
+            .unwrap_or(Mode::Exec),
+        TypX::Lambda(_, _) => Mode::Proof,
+        TypX::AnonymousClosure(_, _, _) => todo!(),
+        TypX::Datatype(path, _) => ctxt.dts.get(path).expect("datatype for path").x.mode,
+        TypX::Boxed(t) => typ_min_mode(ctxt, t),
+        TypX::TypParam(_) => Mode::Exec,
+        TypX::TypeId => panic!("invalid type here"),
+        TypX::Air(_) => panic!("invalid type here"),
+        TypX::StrSlice => Mode::Exec,
+        TypX::Char => Mode::Exec,
+    }
+}
+
 #[warn(unused_must_use)]
 fn check_typ(ctxt: &Ctxt, typ: &Arc<TypX>, span: &air::ast::Span) -> Result<(), VirErr> {
     crate::ast_visitor::typ_visitor_check(typ, &mut |t| {
@@ -370,6 +396,13 @@ fn check_function(
 
     let ret_name = user_local_name(&*function.x.ret.x.name);
     for p in function.x.params.iter() {
+        let tmm = typ_min_mode(&ctxt, &p.x.typ);
+        if !crate::modes::mode_le(tmm, p.x.typ_mode) {
+            return error(
+                &p.span,
+                format!("parameter must have a mode compatible with its type ({})", tmm),
+            );
+        }
         check_typ(ctxt, &p.x.typ, &p.span)?;
         if user_local_name(&*p.x.name) == ret_name {
             return error(&p.span, "parameter name cannot be the same as the return value name");

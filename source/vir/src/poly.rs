@@ -716,7 +716,7 @@ fn poly_function(ctx: &Ctx, function: &Function) -> Function {
     // Parameter types are made Poly for spec functions and trait methods
     let mut new_params: Vec<Param> = Vec::new();
     for param in params.iter() {
-        let ParamX { name, typ, mode, is_mut, unwrapped_info } = &param.x;
+        let ParamX { name, typ, mode, typ_mode, is_mut, unwrapped_info } = &param.x;
         let typ = if function_mode == Mode::Spec || is_trait {
             coerce_typ_to_poly(ctx, typ)
         } else {
@@ -727,6 +727,7 @@ fn poly_function(ctx: &Ctx, function: &Function) -> Function {
             name: name.clone(),
             typ,
             mode: *mode,
+            typ_mode: *typ_mode,
             is_mut: *is_mut,
             unwrapped_info: unwrapped_info.clone(),
         };
@@ -783,13 +784,14 @@ fn poly_function(ctx: &Ctx, function: &Function) -> Function {
         state.types.push_scope(true);
         let mut new_params: Vec<Param> = Vec::new();
         for param in params.iter() {
-            let ParamX { name, typ, mode, is_mut, unwrapped_info } = &param.x;
+            let ParamX { name, typ, mode, typ_mode, is_mut, unwrapped_info } = &param.x;
             let typ = coerce_typ_to_poly(ctx, typ);
             let _ = state.types.insert(name.clone(), typ.clone());
             let paramx = ParamX {
                 name: name.clone(),
                 typ,
                 mode: *mode,
+                typ_mode: *typ_mode,
                 is_mut: *is_mut,
                 unwrapped_info: unwrapped_info.clone(),
             };

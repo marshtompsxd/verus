@@ -238,7 +238,7 @@ test_verify_one_file! {
         }
 
         // this actually uses spec_index, not index:
-        fn test(v: V)
+        proof fn test(v: V)
             requires
                 v[0] == 3,
         {

@@ -3,7 +3,8 @@ use crate::attributes::{
 };
 use crate::context::{BodyCtxt, Context};
 use crate::rust_to_vir_base::{
-    check_generics_bounds_fun, def_id_to_vir_path, foreign_param_to_var, mid_ty_to_vir,
+    check_generics_bounds_fun, def_id_to_vir_path, foreign_param_to_var, mid_ty_to_vir_ghost,
+    ErasedTyp,
 };
 use crate::rust_to_vir_expr::{expr_to_vir, pat_to_mut_var, ExprModifier};
 use crate::util::{err_span, unsupported_err_span};
@@ -54,7 +55,7 @@ fn check_fn_decl<'tcx>(
     attrs: &[Attribute],
     mode: Mode,
     output_ty: rustc_middle::ty::Ty<'tcx>,
-) -> Result<Option<(Typ, Mode)>, VirErr> {
+) -> Result<Option<(Typ, ErasedTyp, Mode)>, VirErr> {
     let FnDecl { inputs: _, output, c_variadic, implicit_self, lifetime_elision_allowed: _ } = decl;
     unsupported_err_unless!(!c_variadic, span, "c_variadic functions");
     match implicit_self {
@@ -70,8 +71,8 @@ fn check_fn_decl<'tcx>(
         // so we always return the default mode.
         // The current workaround is to return a struct if the default doesn't work.
         rustc_hir::FnRetTy::Return(_ty) => {
-            let typ = mid_ty_to_vir(tcx, span, &output_ty, false)?;
-            Ok(Some((typ, get_ret_mode(mode, attrs))))
+            let (typ, erased_typ) = mid_ty_to_vir_ghost(tcx, span, &output_ty, false, false)?;
+            Ok(Some((typ, erased_typ, get_ret_mode(mode, attrs))))
         }
     }
 }
@@ -141,6 +142,17 @@ fn check_new_strlit<'tcx>(ctx: &Context<'tcx>, sig: &'tcx FnSig<'tcx>) -> Result
         return err_span(span, format!("expected a StrSlice"));
     }
     Ok(())
+}
+
+fn typ_mode(param_mode: Mode, erased: ErasedTyp) -> Mode {
+    vir::modes::mode_join(
+        match erased {
+            ErasedTyp::No => Mode::Exec,
+            ErasedTyp::Tracked => Mode::Proof,
+            ErasedTyp::Ghost => Mode::Spec,
+        },
+        param_mode,
+    )
 }
 
 pub enum CheckItemFnEither<A, B> {
@@ -277,15 +289,27 @@ pub(crate) fn check_item_fn<'tcx>(
             );
         }
 
-        let typ =
-            mid_ty_to_vir(ctxt.tcx, span, is_ref_mut.map(|(t, _)| t).unwrap_or(input), false)?;
+        let (typ, erased) = mid_ty_to_vir_ghost(
+            ctxt.tcx,
+            span,
+            is_ref_mut.map(|(t, _)| t).unwrap_or(input),
+            false,
+            false,
+        )?;
 
         // is_mut: means a parameter is like `x: &mut X` or `x: Tracked<&mut X>`
         let is_mut = is_ref_mut.is_some();
 
         let vir_param = ctxt.spanned_new(
             span,
-            ParamX { name, typ, mode: param_mode, is_mut, unwrapped_info: None },
+            ParamX {
+                name,
+                typ,
+                mode: param_mode,
+                typ_mode: typ_mode(param_mode, erased),
+                is_mut,
+                unwrapped_info: None,
+            },
         );
         vir_params.push((vir_param, is_ref_mut.map(|(_, m)| m).flatten()));
     }
@@ -340,7 +364,7 @@ pub(crate) fn check_item_fn<'tcx>(
                     "unexpected named return value for function with default return",
                 );
             }
-            (Some((_, typ)), Some((ret_typ, _))) => {
+            (Some((_, typ)), Some((ret_typ, _, _))) => {
                 if !vir::ast_util::types_equal(&typ, &ret_typ) {
                     return err_span(
                         sig.span,
@@ -387,12 +411,17 @@ pub(crate) fn check_item_fn<'tcx>(
     }
     let params: vir::ast::Params = Arc::new(vir_params.into_iter().map(|(p, _)| p).collect());
 
-    let (ret_name, ret_typ, ret_mode) = match (header.ensure_id_typ, ret_typ_mode) {
-        (None, None) => {
-            (Arc::new(RETURN_VALUE.to_string()), Arc::new(TypX::Tuple(Arc::new(vec![]))), mode)
+    let (ret_name, ret_typ, ret_erased_typ, ret_mode) = match (header.ensure_id_typ, ret_typ_mode) {
+        (None, None) => (
+            Arc::new(RETURN_VALUE.to_string()),
+            Arc::new(TypX::Tuple(Arc::new(vec![]))),
+            ErasedTyp::No,
+            mode,
+        ),
+        (None, Some((typ, erased_typ, mode))) => {
+            (Arc::new(RETURN_VALUE.to_string()), typ, erased_typ, mode)
         }
-        (None, Some((typ, mode))) => (Arc::new(RETURN_VALUE.to_string()), typ, mode),
-        (Some((x, _)), Some((typ, mode))) => (x, typ, mode),
+        (Some((x, _)), Some((typ, erased_typ, mode))) => (x, typ, erased_typ, mode),
         _ => panic!("internal error: ret_typ"),
     };
     let ret = ctxt.spanned_new(
@@ -400,6 +429,7 @@ pub(crate) fn check_item_fn<'tcx>(
         ParamX {
             name: ret_name,
             typ: ret_typ,
+            typ_mode: typ_mode(ret_mode, ret_erased_typ),
             mode: ret_mode,
             is_mut: false,
             unwrapped_info: None,
@@ -527,6 +557,7 @@ pub(crate) fn check_item_const<'tcx>(
     visibility: vir::ast::Visibility,
     attrs: &[Attribute],
     typ: &Typ,
+    erased_typ: ErasedTyp,
     body_id: &BodyId,
 ) -> Result<(), VirErr> {
     let path = def_id_to_vir_path(ctxt.tcx, id);
@@ -545,7 +576,14 @@ pub(crate) fn check_item_const<'tcx>(
     let ret_name = Arc::new(RETURN_VALUE.to_string());
     let ret = ctxt.spanned_new(
         span,
-        ParamX { name: ret_name, typ: typ.clone(), mode, is_mut: false, unwrapped_info: None },
+        ParamX {
+            name: ret_name,
+            typ: typ.clone(),
+            mode,
+            typ_mode: typ_mode(mode, erased_typ),
+            is_mut: false,
+            unwrapped_info: None,
+        },
     );
     let func = FunctionX {
         name,
@@ -602,26 +640,39 @@ pub(crate) fn check_foreign_item_fn<'tcx>(
     for (param, input) in idents.iter().zip(inputs.iter()) {
         let name = Arc::new(foreign_param_to_var(param));
         let is_mut = is_mut_ty(ctxt, *input);
-        let typ =
-            mid_ty_to_vir(ctxt.tcx, param.span, is_mut.map(|(t, _)| t).unwrap_or(input), false)?;
+        let (typ, erased_typ) = mid_ty_to_vir_ghost(
+            ctxt.tcx,
+            param.span,
+            is_mut.map(|(t, _)| t).unwrap_or(input),
+            false,
+            false,
+        )?;
         // REVIEW: the parameters don't have attributes, so we use the overall mode
         let vir_param = ctxt.spanned_new(
             param.span,
-            ParamX { name, typ, mode, is_mut: is_mut.is_some(), unwrapped_info: None },
+            ParamX {
+                name,
+                typ,
+                mode,
+                typ_mode: typ_mode(mode, erased_typ),
+                is_mut: is_mut.is_some(),
+                unwrapped_info: None,
+            },
         );
         vir_params.push(vir_param);
     }
     let path = def_id_to_vir_path(ctxt.tcx, id);
     let name = Arc::new(FunX { path, trait_path: None });
     let params = Arc::new(vir_params);
-    let (ret_typ, ret_mode) = match ret_typ_mode {
-        None => (Arc::new(TypX::Tuple(Arc::new(vec![]))), mode),
-        Some((typ, mode)) => (typ, mode),
+    let (ret_typ, ret_erased_typ, ret_mode) = match ret_typ_mode {
+        None => (Arc::new(TypX::Tuple(Arc::new(vec![]))), ErasedTyp::No, mode),
+        Some((typ, erased_typ, mode)) => (typ, erased_typ, mode),
     };
     let ret_param = ParamX {
         name: Arc::new(RETURN_VALUE.to_string()),
         typ: ret_typ,
         mode: ret_mode,
+        typ_mode: typ_mode(ret_mode, ret_erased_typ),
         is_mut: false,
         unwrapped_info: None,
     };

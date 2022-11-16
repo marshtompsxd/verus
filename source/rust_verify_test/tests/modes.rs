@@ -1416,3 +1416,23 @@ test_verify_one_file! {
         }
     } => Ok(())
 }
+
+test_verify_one_file! {
+    #[test] test_nat_int_exec_regression_290_1 verus_code! {
+        exec fn f(i: nat) -> nat {
+            i
+        }
+    } => Err(e) => assert_vir_error_msg(e, todo!())
+}
+
+test_verify_one_file! {
+    #[test] test_spec_exec_regression_290_2 verus_code! {
+        #[spec] struct A {
+            a: nat,
+        }
+
+        exec fn f(a: A) -> A {
+            a
+        }
+    } => Err(e) => assert_vir_error_msg(e, todo!())
+}

@@ -29,7 +29,7 @@ test_verify_one_file! {
             First(A),
         }
 
-        fn one(v: int) {
+        #[proof] fn one(v: int) {
             let t1 = Thing::First(v);
         }
     } => Ok(())

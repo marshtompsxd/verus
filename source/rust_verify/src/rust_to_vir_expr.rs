@@ -2652,7 +2652,7 @@ pub(crate) fn expr_to_vir_innermost<'tcx>(
                         )?
                         .1;
                         unsupported_err_unless!(
-                            !deref_ghost,
+                            !deref_ghost.is_erased(),
                             lhs.span,
                             "assignment through Ghost/Tracked"
                         );

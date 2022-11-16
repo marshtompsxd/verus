@@ -608,6 +608,7 @@ pub struct ParamX {
     pub name: Ident,
     pub typ: Typ,
     pub mode: Mode,
+    pub typ_mode: Mode,
     /// An &mut parameter
     pub is_mut: bool,
     /// If the parameter uses a Ghost(x) or Tracked(x) pattern to unwrap the value, this is

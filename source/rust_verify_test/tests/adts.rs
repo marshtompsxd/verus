@@ -31,7 +31,7 @@ const STRUCTS: &str = verus_code_str! {
 
 test_verify_one_file! {
     #[test] test_struct_1 STRUCTS.to_string() + verus_code_str! {
-        fn test_struct_1(p: int) {
+        proof fn test_struct_1(p: int) {
             assert((Car { four_doors: true, passengers: p }).passengers == p);
             assert((Car { passengers: p, four_doors: true }).passengers == p); // fields intentionally out of order
             assert((Car { four_doors: true, passengers: p }).passengers != p); // FAILS
@@ -41,7 +41,7 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] test_struct_2 STRUCTS.to_string() + verus_code_str! {
-        fn test_struct_2(c: Car, p: int) {
+        proof fn test_struct_2(c: Car, p: int) {
             assume(c.passengers == p);
             assert(c.passengers == p);
             assert(c.passengers != p); // FAILS
@@ -51,7 +51,7 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] test_struct_3 STRUCTS.to_string() + verus_code_str! {
-        fn test_struct_3(p: int) {
+        proof fn test_struct_3(p: int) {
             let c = Car { passengers: p, four_doors: true };
             assert(c.passengers == p);
             assert(!c.four_doors); // FAILS
@@ -61,7 +61,7 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] test_struct_4 STRUCTS.to_string() + verus_code_str! {
-        fn test_struct_4(passengers: int) {
+        proof fn test_struct_4(passengers: int) {
             assert((Car { passengers, four_doors: true }).passengers == passengers);
         }
     } => Ok(())
@@ -85,6 +85,7 @@ test_verify_one_file! {
             Two(int),
         }
 
+        #[proof]
         fn test(v: int) {
             let t = Thing::One { a: v };
         }

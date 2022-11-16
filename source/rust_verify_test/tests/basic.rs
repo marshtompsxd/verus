@@ -30,7 +30,7 @@ test_verify_one_file! {
     #[test] test2 verus_code! {
         spec fn f(i: int, j: int) -> bool;
 
-        fn test2(b: bool, x: int, y: int, z: int) {
+        proof fn test2(b: bool, x: int, y: int, z: int) {
             assert(b || !b);
 
             assume(b);
@@ -48,7 +48,7 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] test2_fails verus_code! {
-        fn test2(b: bool, x: int, y: int, z: int) {
+        proof fn test2(b: bool, x: int, y: int, z: int) {
             assume(x <= y && y <= z);
             assert(x < z); // FAILS
         }
@@ -57,7 +57,7 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] test_assign verus_code! {
-        fn test_assign(a: int, b: int) {
+        proof fn test_assign(a: int, b: int) {
             let c = a + b;
             assert(c == a + b);
 
@@ -71,7 +71,7 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] test_assign_mut verus_code! {
-        fn test_assign_mut(a: int, b: int) {
+        proof fn test_assign_mut(a: int, b: int) {
             let mut c = a;
             c = c + b;
             assert(c == a + b);
@@ -97,7 +97,7 @@ test_verify_one_file! {
             f1(j, i)
         }
 
-        fn test_spec_fn(a: int, b: int) {
+        proof fn test_spec_fn(a: int, b: int) {
             hide(f2);
 
             assume(f2(a, b));
@@ -138,13 +138,12 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] test_requires3 TEST_REQUIRES1.to_string() + verus_code_str! {
-        fn test_requires3(a: int, b: int, c: int) {
+        proof fn test_requires3(a: int, b: int, c: int) {
             assume(a <= b);
             assume(b <= c);
-            proof {
-                test_requires1(a + a, b + b, c + c);
-                test_requires1(a + c, b + b, c + c); // FAILS
-            }
+
+            test_requires1(a + a, b + b, c + c);
+            test_requires1(a + c, b + b, c + c); // FAILS
         }
     } => Err(err) => assert_one_fails(err)
 }
