@@ -25,7 +25,7 @@ spec fn add_one(i: int) -> int {
     i + 1
 }
 
-fn very_simple(z: int) {
+proof fn very_simple(z: int) {
     let mut x = z;      // 1_mutation
     assert(add_one(x) < 3);
 }

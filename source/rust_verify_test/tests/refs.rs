@@ -5,7 +5,7 @@ use common::*;
 
 test_verify_one_file! {
     #[test] test_ref_0 verus_code! {
-        fn test_ref_0(p: int)
+        proof fn test_ref_0(p: int)
             requires p == 12
         {
             let b: &int = &p;

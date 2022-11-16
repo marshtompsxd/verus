@@ -28,7 +28,7 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] e02_pass verus_code! {
-        fn e02(p: int) {
+        proof fn e02(p: int) {
             assert(true ==> true);
         }
     } => Ok(())
@@ -36,7 +36,7 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] e02_fail verus_code! {
-        fn e02(p: int) {
+        proof fn e02(p: int) {
             assert(true ==> false); // FAILS
         }
     } => Err(err) => assert_one_fails(err)
@@ -145,15 +145,15 @@ test_verify_one_file! {
 
 test_verify_one_file! {
     #[test] e05_fail E05_SHARED.to_string() + verus_code_str! {
-        proof fn try_out_some_set_literals_1(x: int, y: int) {
+        proof fn try_out_some_set_literals_1() {
             assert(has_seven_and_not_nine(set![])); // FAILS
         }
 
-        fn try_out_some_set_literals_2(x: int, y: int) {
+        fn try_out_some_set_literals_2() {
             assert(has_seven_and_not_nine(set![7, 9])); // FAILS
         }
 
-        fn try_out_some_set_literals_3(x: int, y: int) {
+        fn try_out_some_set_literals_3() {
             assert(has_seven_and_not_nine(set![1, 3, 5, 7, 8, 9, 10])); // FAILS
         }
     } => Err(err) => assert_fails(err, 3)
