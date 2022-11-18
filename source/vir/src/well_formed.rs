@@ -3,7 +3,7 @@ use crate::ast::{
     Mode, MultiOp, Path, PathX, TypX, UnaryOp, UnaryOpr, VirErr, VirErrAs,
 };
 use crate::ast_util::{
-    error, is_visible_to_opt, msg_error, path_as_rust_name, referenced_vars_expr,
+    error, is_visible_to_opt, msg_error, path_as_rust_name, referenced_vars_expr, typ_min_mode,
 };
 use crate::datatype_to_air::is_datatype_transparent;
 use crate::def::user_local_name;
@@ -16,32 +16,6 @@ struct Ctxt {
     pub(crate) crate_names: Vec<String>,
     pub(crate) funs: HashMap<Fun, Function>,
     pub(crate) dts: HashMap<Path, Datatype>,
-}
-
-fn typ_min_mode(ctxt: &Ctxt, typ: &crate::ast::Typ) -> Mode {
-    use crate::ast::IntRange;
-    match &**typ {
-        TypX::Bool => Mode::Exec,
-        TypX::Int(IntRange::Int | IntRange::Nat) => Mode::Proof,
-        TypX::Int(IntRange::U(_) | IntRange::I(_) | IntRange::USize | IntRange::ISize) => {
-            Mode::Exec
-        }
-        TypX::ConstInt(_) => Mode::Exec,
-        TypX::Tuple(ts) => ts
-            .iter()
-            .map(|t| typ_min_mode(ctxt, t))
-            .reduce(crate::modes::mode_join)
-            .unwrap_or(Mode::Exec),
-        TypX::Lambda(_, _) => Mode::Proof,
-        TypX::AnonymousClosure(_, _, _) => todo!(),
-        TypX::Datatype(path, _) => ctxt.dts.get(path).expect("datatype for path").x.mode,
-        TypX::Boxed(t) => typ_min_mode(ctxt, t),
-        TypX::TypParam(_) => Mode::Exec,
-        TypX::TypeId => panic!("invalid type here"),
-        TypX::Air(_) => panic!("invalid type here"),
-        TypX::StrSlice => Mode::Exec,
-        TypX::Char => Mode::Exec,
-    }
 }
 
 #[warn(unused_must_use)]
@@ -396,7 +370,7 @@ fn check_function(
 
     let ret_name = user_local_name(&*function.x.ret.x.name);
     for p in function.x.params.iter() {
-        let tmm = typ_min_mode(&ctxt, &p.x.typ);
+        let tmm = typ_min_mode(&ctxt.dts, &p.x.typ);
         if !crate::modes::mode_le(tmm, p.x.typ_mode) {
             return error(
                 &p.span,

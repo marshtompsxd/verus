@@ -425,3 +425,31 @@ pub fn wrap_in_trigger(expr: &Expr) -> Expr {
         ExprX::Unary(UnaryOp::Trigger(TriggerAnnotation::Trigger(None)), expr.clone()),
     )
 }
+
+pub(crate) fn typ_min_mode(
+    dts: &std::collections::HashMap<Path, crate::ast::Datatype>,
+    typ: &crate::ast::Typ,
+) -> Mode {
+    match &**typ {
+        TypX::Bool => Mode::Exec,
+        TypX::Int(IntRange::Int | IntRange::Nat) => Mode::Proof,
+        TypX::Int(IntRange::U(_) | IntRange::I(_) | IntRange::USize | IntRange::ISize) => {
+            Mode::Exec
+        }
+        TypX::ConstInt(_) => Mode::Exec,
+        TypX::Tuple(ts) => ts
+            .iter()
+            .map(|t| typ_min_mode(dts, t))
+            .reduce(crate::modes::mode_join)
+            .unwrap_or(Mode::Exec),
+        TypX::Lambda(_, _) => Mode::Spec,
+        TypX::AnonymousClosure(_, _, _) => todo!(),
+        TypX::Datatype(path, _) => dts.get(path).expect("datatype for path").x.mode,
+        TypX::Boxed(t) => typ_min_mode(dts, t),
+        TypX::TypParam(_) => Mode::Exec,
+        TypX::TypeId => panic!("invalid type here"),
+        TypX::Air(_) => panic!("invalid type here"),
+        TypX::StrSlice => Mode::Exec,
+        TypX::Char => Mode::Exec,
+    }
+}
