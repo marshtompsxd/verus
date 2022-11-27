@@ -1436,3 +1436,13 @@ test_verify_one_file! {
         }
     } => Err(e) => assert_vir_error_msg(e, todo!())
 }
+
+test_verify_one_file! {
+    #[test] test_spec_exec_typ_param verus_code! {
+        struct S<A>(A);
+
+        exec fn f(s: S<int>) {
+            let x: int = s.0;
+        }
+    } => Err(e) => assert_vir_error_msg(e, todo!())
+}

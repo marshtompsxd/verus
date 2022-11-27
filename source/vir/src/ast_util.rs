@@ -430,6 +430,13 @@ pub(crate) fn typ_min_mode(
     dts: &std::collections::HashMap<Path, crate::ast::Datatype>,
     typ: &crate::ast::Typ,
 ) -> Mode {
+    eprintln!("{:?}", typ);
+    let reduce_join_or_exec = |ts: &[Typ]| -> Mode {
+        ts.iter()
+            .map(|t| typ_min_mode(dts, t))
+            .reduce(crate::modes::mode_join)
+            .unwrap_or(Mode::Exec)
+    };
     match &**typ {
         TypX::Bool => Mode::Exec,
         TypX::Int(IntRange::Int | IntRange::Nat) => Mode::Proof,
@@ -437,14 +444,13 @@ pub(crate) fn typ_min_mode(
             Mode::Exec
         }
         TypX::ConstInt(_) => Mode::Exec,
-        TypX::Tuple(ts) => ts
-            .iter()
-            .map(|t| typ_min_mode(dts, t))
-            .reduce(crate::modes::mode_join)
-            .unwrap_or(Mode::Exec),
+        TypX::Tuple(ts) => reduce_join_or_exec(ts),
         TypX::Lambda(_, _) => Mode::Spec,
         TypX::AnonymousClosure(_, _, _) => todo!(),
-        TypX::Datatype(path, _) => dts.get(path).expect("datatype for path").x.mode,
+        TypX::Datatype(path, args) => crate::modes::mode_join(
+            reduce_join_or_exec(args),
+            dts.get(path).expect("datatype for path").x.mode,
+        ),
         TypX::Boxed(t) => typ_min_mode(dts, t),
         TypX::TypParam(_) => Mode::Exec,
         TypX::TypeId => panic!("invalid type here"),
