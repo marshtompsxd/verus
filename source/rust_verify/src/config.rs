@@ -115,6 +115,9 @@ pub fn enable_default_features_and_verus_attr(
 
     rustc_args.push("-Zcrate-attr=register_tool(verus)".to_string());
     rustc_args.push("-Zcrate-attr=register_tool(verifier)".to_string());
+
+    // I'm not sure why, but -Zenable_feature doesn't seem to work for this
+    rustc_args.push("-Zcrate-attr=feature(allocator_api)".to_string());
 }
 
 pub fn parse_args(program: &String, args: impl Iterator<Item = String>) -> (Args, Vec<String>) {
