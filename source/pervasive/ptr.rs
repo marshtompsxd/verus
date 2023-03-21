@@ -481,8 +481,9 @@ impl DeallocRaw {
 }
 
 // TODO this currently doesn't work without `external`,
-// because of some temporary Verus trait limitations,
-// but we need to implement Copy.
+// because of some temporary Verus trait limitations.
+// In the meantime, just use Copy.
+
 #[verifier(external)]
 impl<A> Clone for PPtr<A> {
     fn clone(&self) -> Self {
