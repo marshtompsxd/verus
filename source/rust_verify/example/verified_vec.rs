@@ -3,45 +3,44 @@
 
 use builtin::*;
 use builtin_macros::*;
-mod pervasive;
-use crate::pervasive::ptr::*;
-use crate::pervasive::modes::*;
-use crate::pervasive::map::*;
-use crate::pervasive::seq::*;
+use vstd::*;
+use vstd::modes::*;
+use vstd::ptr::*;
+use vstd::prelude::*;
 
-verus_old_todo_no_ghost_blocks!{
+verus!{
 
 struct Vector<V> {
     pub ptr: PPtr<V>,
     pub len: usize,
     pub capacity: usize,
 
-    #[proof] pub elems: Map<nat, PointsTo<V>>,
-    #[proof] pub rest: PointsToRaw,
-    #[proof] pub dealloc: DeallocRaw,
+    pub elems: Tracked<Map<nat, PointsTo<V>>>,
+    pub rest: Tracked<PointsToRaw>,
+    pub dealloc: Tracked<DeallocRaw>,
 }
 
 impl<V: SizeOf> Vector<V> {
     pub closed spec fn well_formed(&self) -> bool {
         &&& self.len <= self.capacity
         &&& (forall |i: nat| 0 <= i < self.len ==>
-            self.elems.dom().contains(i))
+            self.elems@.dom().contains(i))
         &&& (forall |i: nat| 0 <= i < self.len ==>
-            (#[trigger] self.elems.index(i))@.pptr
+            (#[trigger] self.elems@.index(i))@.pptr
               == self.ptr.id() + i as int * size_of::<V>())
         &&& (forall |i: nat| 0 <= i < self.len ==>
-            (#[trigger] self.elems.index(i))@.value.is_Some())
-        &&& self.rest@.pptr == self.ptr.id() + self.len * size_of::<V>()
-        &&& self.rest@.size == (self.capacity - self.len) * size_of::<V>()
-        &&& self.dealloc@.pptr == self.ptr.id()
-        &&& self.dealloc@.size == self.capacity * size_of::<V>()
-        &&& self.dealloc@.align == align_of::<V>()
+            (#[trigger] self.elems@.index(i))@.value.is_Some())
+        &&& self.rest@@.pptr == self.ptr.id() + self.len * size_of::<V>()
+        &&& self.rest@@.size == (self.capacity - self.len) * size_of::<V>()
+        &&& self.dealloc@@.pptr == self.ptr.id()
+        &&& self.dealloc@@.size == self.capacity * size_of::<V>()
+        &&& self.dealloc@@.align == align_of::<V>()
     }
 
     pub closed spec fn view(&self) -> Seq<V> {
         Seq::new(
           self.len as nat,
-          |i: int| self.elems.index(i as nat)@.value.get_Some_0(),
+          |i: int| self.elems@.index(i as nat)@.value.get_Some_0(),
         )
     }
 
@@ -51,22 +50,16 @@ impl<V: SizeOf> Vector<V> {
         proof {
             layout_for_type_is_valid::<V>();
         }
-        let (p, points_to0, dealloc0)  = PPtr::<V>::alloc(0, get_align_of::<V>());
-
-        #[proof] let points_to;
-        #[proof] let dealloc;
-        proof {
-            points_to = points_to0.get();
-            dealloc = dealloc0.get();
-        }
+        let (p, Tracked(points_to), Tracked(dealloc)) =
+            PPtr::<V>::alloc(0, get_align_of::<V>());
 
         Vector {
             ptr: p,
             len: 0,
             capacity: 0,
-            elems: Map::tracked_empty(),
-            rest: points_to,
-            dealloc: dealloc,
+            elems: Tracked(Map::tracked_empty()),
+            rest: Tracked(points_to),
+            dealloc: Tracked(dealloc),
         }
     }
 
@@ -89,12 +82,9 @@ impl<V: SizeOf> Vector<V> {
         let elem_ptr_usize = ptr_usize + i * get_size_of::<V>();
         let elem_ptr = PPtr::<V>::from_usize(elem_ptr_usize);
 
-        #[proof] let perm;
-        proof {
-            perm = self.elems.tracked_borrow(i as nat);
-        }
+        let tracked perm = self.elems.borrow().tracked_borrow(i as nat);
 
-        elem_ptr.borrow(tracked_exec_borrow(perm))
+        elem_ptr.borrow(Tracked(perm))
     }
 
     pub fn resize(&mut self, new_capacity: usize)
@@ -106,6 +96,7 @@ impl<V: SizeOf> Vector<V> {
             old(self)@ === self@,
             self.capacity === new_capacity,
     {
+        // TODO implement
         assume(false);
     }
 
@@ -129,10 +120,10 @@ impl<V: SizeOf> Vector<V> {
         }
         assert(self.len < self.capacity);
 
-        #[proof] let points_to;
+        let tracked mut points_to;
         proof {
-            #[proof] let mut rest = PointsToRaw::empty();
-            tracked_swap(&mut rest, &mut self.rest);
+            let tracked mut rest = PointsToRaw::empty();
+            tracked_swap(&mut rest, self.rest.borrow_mut());
 
             assert(size_of::<V>() as int <=
                 (self.capacity - self.len) * size_of::<V>())
@@ -143,11 +134,11 @@ impl<V: SizeOf> Vector<V> {
                 by(nonlinear_arith);
             }
 
-            #[proof] let (points_to_raw, mut rest) = rest.split(size_of::<V>() as int);
+            let tracked (points_to_raw, mut rest) = rest.split(size_of::<V>() as int);
             assume(points_to_raw@.pptr % align_of::<V>() as int == 0);
             points_to = points_to_raw.into_typed::<V>();
 
-            tracked_swap(&mut rest, &mut self.rest);
+            tracked_swap(&mut rest, self.rest.borrow_mut());
         }
 
         let i = self.len;
@@ -163,11 +154,10 @@ impl<V: SizeOf> Vector<V> {
         let elem_ptr_usize = ptr_usize + i * get_size_of::<V>();
         let elem_ptr = PPtr::<V>::from_usize(elem_ptr_usize);
 
-        let mut points_to = tracked_exec(points_to);
-        elem_ptr.put(&mut points_to, v);
+        elem_ptr.put(Tracked(&mut points_to), v);
 
         proof {
-            self.elems.tracked_insert(self.len as nat, points_to.get());
+            self.elems.borrow_mut().tracked_insert(self.len as nat, points_to);
         }
 
         self.len = self.len + 1;
