@@ -12,7 +12,7 @@ use crate::prelude::*;
 
 verus!{
 
-// TODO
+// TODO Use the Rust trait 'Sized' instead
 pub trait SizeOf {
     spec fn size_of() -> nat;
     spec fn align_of() -> nat;
@@ -43,10 +43,11 @@ pub open spec fn size_of<V: SizeOf>() -> nat {
 
 #[verifier(inline)]
 pub open spec fn align_of<V: SizeOf>() -> nat {
-    V::size_of()
+    V::align_of()
 }
 
 #[verifier(external_body)]
+#[inline(always)]
 pub fn get_size_of<V: SizeOf>() -> (u: usize)
     ensures u as nat == size_of::<V>()
 {
@@ -54,6 +55,7 @@ pub fn get_size_of<V: SizeOf>() -> (u: usize)
 }
 
 #[verifier(external_body)]
+#[inline(always)]
 pub fn get_align_of<V: SizeOf>() -> (u: usize)
     ensures u as nat == align_of::<V>()
 {
@@ -185,6 +187,7 @@ pub proof fn layout_for_type_is_valid<V: SizeOf>()
 // TODO implement: borrow_mut; figure out Drop, see if we can avoid leaking?
 
 // TODO just replace this with `*mut V`
+#[repr(C)]
 #[verifier(external_body)]
 pub struct PPtr<#[verifier(strictly_positive)] V> {
     uptr: *mut V,
@@ -590,8 +593,11 @@ impl<V> PPtr<V> {
             perm@.value === Some(v),
         opens_invariants none
     {
+        // See explanation about exposing pointers, above
+        let ptr = self.uptr as usize as *mut V;
+
         unsafe {
-            *(self.uptr) = v;
+            *ptr = v;
         }
     }
 
@@ -615,8 +621,11 @@ impl<V> PPtr<V> {
             v === old(perm)@.value.get_Some_0(),
         opens_invariants none
     {
+        // See explanation about exposing pointers, above
+        let ptr = self.uptr as usize as *mut V;
+
         unsafe {
-            core::ptr::read(self.uptr)
+            core::ptr::read(ptr)
         }
     }
 
@@ -635,9 +644,12 @@ impl<V> PPtr<V> {
             out_v === old(perm)@.value.get_Some_0(),
         opens_invariants none
     {
+        // See explanation about exposing pointers, above
+        let ptr = self.uptr as usize as *mut V;
+
         unsafe {
             let mut m = in_v;
-            mem::swap(&mut m, &mut *self.uptr);
+            mem::swap(&mut m, &mut *ptr);
             m
         }
     }
@@ -656,8 +668,11 @@ impl<V> PPtr<V> {
         ensures *v === perm@.value.get_Some_0(),
         opens_invariants none
     {
+        // See explanation about exposing pointers, above
+        let ptr = self.uptr as usize as *mut V;
+
         unsafe {
-            &*self.uptr
+            &*ptr
         }
     }
 
@@ -700,6 +715,7 @@ impl<V> PPtr<V> {
     {
         unsafe {
             // Since we have the Dealloc object, we know this is a valid layout
+            // and that it's safe to call 'deallocate'
             let layout = Layout::from_size_align_unchecked(size, align);
             let nn = core::ptr::NonNull::new_unchecked(self.uptr as *mut u8);
             alloc::alloc::Global.deallocate(nn, alloc::alloc::Layout::for_value(&*self.uptr));
