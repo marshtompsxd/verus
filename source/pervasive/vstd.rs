@@ -19,6 +19,7 @@ pub mod invariant;
 pub mod atomic;
 pub mod atomic_ghost;
 pub mod modes;
+pub mod layout;
 pub mod multiset;
 pub mod function;
 pub mod state_machine_internal;

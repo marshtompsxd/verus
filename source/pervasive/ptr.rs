@@ -9,67 +9,10 @@ use alloc::alloc::Allocator;
 use builtin::*;
 use builtin_macros::*;
 use crate::prelude::*;
+use crate::layout::*;
 
 verus!{
 
-// TODO Use the Rust trait 'Sized' instead
-pub trait SizeOf {
-    spec fn size_of() -> nat;
-    spec fn align_of() -> nat;
-}
-
-pub open spec fn is_power_2(n: int) -> bool
-  decreases n
-{
-    if n <= 0 {
-        false
-    } else if n == 1 {
-        true
-    } else {
-        n % 2 == 0 && is_power_2(n / 2)
-    }
-}
-
-/// Matches the conditions here: https://doc.rust-lang.org/stable/std/alloc/struct.Layout.html
-pub open spec fn valid_layout(size: usize, align: usize) -> bool {
-    is_power_2(align as int)
-      && size <= isize::MAX as int - (isize::MAX as int % align as int)
-}
-
-#[verifier(inline)]
-pub open spec fn size_of<V: SizeOf>() -> nat {
-    V::size_of()
-}
-
-#[verifier(inline)]
-pub open spec fn align_of<V: SizeOf>() -> nat {
-    V::align_of()
-}
-
-#[verifier(external_body)]
-#[inline(always)]
-pub fn get_size_of<V: SizeOf>() -> (u: usize)
-    ensures u as nat == size_of::<V>()
-{
-    core::mem::size_of::<V>()
-}
-
-#[verifier(external_body)]
-#[inline(always)]
-pub fn get_align_of<V: SizeOf>() -> (u: usize)
-    ensures u as nat == align_of::<V>()
-{
-    core::mem::align_of::<V>()
-}
-
-// TODO check that this is sound
-#[verifier(external_body)]
-pub proof fn layout_for_type_is_valid<V: SizeOf>()
-    ensures
-        valid_layout(size_of::<V>() as usize, align_of::<V>() as usize),
-        size_of::<V>() as usize as nat == size_of::<V>(),
-        align_of::<V>() as usize as nat == align_of::<V>(),
-{ unimplemented!() }
 
 /// `PPtr<V>` (which stands for "permissioned pointer")
 /// is a wrapper around a raw pointer to `V` on the heap.
