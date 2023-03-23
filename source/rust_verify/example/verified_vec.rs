@@ -7,6 +7,7 @@ use vstd::*;
 use vstd::modes::*;
 use vstd::ptr::*;
 use vstd::prelude::*;
+use vstd::layout::*;
 
 verus!{
 
